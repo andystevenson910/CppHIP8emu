@@ -84,7 +84,7 @@ class chip8{
 
         bool enactInstruction(std::uint16_t instruction){
             if (instruction == 0x0E00) { // 0E00/CLS: Clear the display
-                memset(display, 0, sizeof(display[0][0]) * 64 * 32);
+                memset(display, 0, sizeof(display[0][0]) * 64 * 32)
             } else if (instruction == 0x00EE) { // 00EE/RET: Returns subroutine (pops subroutine stack)
                 stack.pop();
             } else if ((instruction & 0xF000) == 0x1000) { // 1NNN/JP addr: Jump to address
@@ -107,11 +107,13 @@ class chip8{
                 if (dataRegister[(instruction & 0x0F00)>>8] == (dataRegister[(instruction & 0x00F0)>>4])){
                     programCounter++;
                 }
-            } else if ((instruction & 0xF000) == 0x6000) { // 6xkk/SE Vx byte, byte: 
-                //DEBUG: this might be a problem a) it might not check intended and a more important b)might need to increment the pc twice
-                if (dataRegister[(instruction & 0x0F00)>>8] == (dataRegister[(instruction & 0x00F0)>>4])){
-                    programCounter++;
-                }
+            } else if ((instruction & 0xF000) == 0x6000) { // 6xkk/LD Vx, byte: Put kk into register Vx
+                dataRegister[(instruction & 0x0F00) >> 8] = instruction & 0x00FF;
+                
+            } else if ((instruction & 0xF000) == 0x7000) { // 7xkk/ADD Vx, byte: ADD kk into register Vx (NOTE: THERE IS NO CARRY FLAG SETTING)
+                std::uint16_t sum = dataRegister[(instruction & 0x0F00) >> 8] + instruction & 0x00FF;
+                dataRegister[(instruction & 0x0F00) >> 8] = sum;
+                
             } else {
                 // Default case
             }
