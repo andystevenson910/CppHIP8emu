@@ -183,7 +183,7 @@ class chip8{
             else if ((instruction & 0xF000) == 0xC000) { //Cxkk/RND Vx, byte: Random number 0 to 255 anded with kk and assigned to Vx
                 dataRegister[(instruction & 0x0F00) >> 8] = (instruction & 0x00FF) & chip8Rand();
             }
-            else if ((instruction & 0xF000) == 0xD000) { //Dxyn/DRW Vx, Vy, nibble: 
+            else if ((instruction & 0xF000) == 0xD000) { //Dxyn/DRW Vx, Vy, nibble: //TODO: Review this
                 xStart = instruction & 0x0F00 >> 8;
                 yStart = instruction & 0x00F0 >> 4;
 
@@ -199,13 +199,25 @@ class chip8{
                         display[yCoor][xCoor] = display[yCoor][xCoor] ^ ((sprite >> bitIndex) & 1);
                     }
                 }
-                
-
             }
-            else if (){
-                
+            else if ((instruction & 0xF0FF) == 0xE09E) { // EX9E: Skip if key Vx is pressed
+                uint8_t key = dataRegister[(instruction & 0x0F00) >> 8]; // Key to check (0x0-0xF)
+                if (keypad[key]) {              // If key is pressed...
+                    programCounter += 0x2;        // Skip next instruction
+                }
             }
-            
+            else if ((instruction & 0xF0FF) == 0xE0A1) { // EXA1: Skip if key Vx is not pressed.
+                uint8_t key = dataRegister[(instruction & 0x0F00) >> 8]; // Key to check (0x0-0xF)
+                if (!keypad[key]) {              // If key is not pressed...
+                    programCounter += 0x2;        // Skip next instruction
+                }
+            }
+            else if ((instruction & 0xF0FF) == 0xF007) { //Fx07 - LD Vx, DT: Set Vx = delay timer value. 
+                dataRegister[(instruction & 0x0F00) >> 8] = delayTimer;
+            }
+            else if ((instruction & 0xF0FF) == 0xF00A) { //Fx0A - LD Vx, K: Wait for a key press, store the value of the key in Vx. 
+                dataRegister[(instruction & 0x0F00) >> 8] = delayTimer;
+            }
             else {
                 // Default case
             }
