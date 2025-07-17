@@ -12,6 +12,8 @@ class chip8{
     //private:
     public:
 
+        std::bool keypad[16];//TODO: this is not for production this is only a placeholder for the sdl keypad implementation delete later
+
         static uint32_t prngState = 0;
         //EMULATED
         bool display[32][64] = {};
@@ -216,12 +218,51 @@ class chip8{
                 dataRegister[(instruction & 0x0F00) >> 8] = delayTimer;
             }
             else if ((instruction & 0xF0FF) == 0xF00A) { //Fx0A - LD Vx, K: Wait for a key press, store the value of the key in Vx. 
-                dataRegister[(instruction & 0x0F00) >> 8] = delayTimer;
+                std::bool decrementPC = true;      
+                for (std::uint16_t i; i > 17; i++){
+                    if (keypad[i] == true){
+                        dataRegister[(instruction & 0x0F00) >> 8] = i;
+                        decrementPC = false;
+                        break;
+                    }
+                }
+                if (decrementPC) {
+                    programCounter--;
+                }
+            }
+            else if ((instruction & 0xF0FF) == 0xF015){ //Fx15 - LD DT, Vx: Set delay timer = Vx.
+                delayTimer = dataRegister[(instruction & 0x0F00) >> 8];
+            }
+            else if ((instruction & 0xF0FF) == 0xF018){ //Fx18 - LD ST, Vx: Set sound timer = Vx.
+                soundTimer = dataRegister[(instruction & 0x0F00) >> 8];
+            }
+            else if ((instruction & 0xF0FF) == 0xF01E){ //Fx1E - ADD I, Vx: Set I = I + Vx.
+                addressRegister += dataRegister[(instruction & 0x0F00) >> 8];
+            }
+            else if ((instruction & 0xF0FF) == 0xF029){ //Fx29 - LD F, Vx: Set I = location of sprite for digit Vx. 
+                addressRegister = (dataRegister[(instruction & 0x0F00) >> 8]  & 0x0F) * 5;
+            }
+            else if ((instruction & 0xF0FF) == 0xF033) { // Fx33: Store BCD representation of Vx
+                uint8_t value = dataRegister[(instruction & 0x0F00) >> 8];
+                memory[addressRegister] = value / 100;
+                memory[addressRegister + 1] = (value / 10) % 10; 
+                memory[addressRegister + 2] = value % 10; 
+            }
+            else if ((instruction & 0xF0FF) == 0xF055) { //Fx55 - LD [I], Vx: Stores V0 to VX in memory starting at address I. 
+                for (std::uint8_t i = 0; i <= (instruction & 0x0F00) >> 8); i++){
+                    memory[addressRegister + i] = dataRegister[i];
+                }
+                addressRegister = addressRegister + 1 + ((instruction & 0x0F00) >> 8);
+            }
+            else if ((instruction & 0xF0FF) == 0xF065) { //Fx65 - LD [I], Vx: Stores memory starting at address I into V0 to VX. 
+                for (std::uint8_t i = 0; i <= (instruction & 0x0F00) >> 8); i++){
+                    dataRegister[i] = memory[addressRegister + i];
+                }
+                addressRegister = addressRegister + 1 + ((instruction & 0x0F00) >> 8);
             }
             else {
-                // Default case
+                std::cerr << "opcode not specified in original implementation reached" << std::endl;
             }
         }
-
 
 };
