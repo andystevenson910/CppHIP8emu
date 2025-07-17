@@ -12,9 +12,10 @@ class chip8{
     //private:
     public:
 
-        std::bool keypad[16];//TODO: this is not for production this is only a placeholder for the sdl keypad implementation delete later
+        bool keypad[16];//TODO: this is not for production this is only a placeholder for the sdl keypad implementation delete later
 
-        static uint32_t prngState = 0;
+        std::uint32_t prngState = 0;
+
         //EMULATED
         bool display[32][64] = {};
         std::uint8_t dataRegister[16] = {}; //V0-VF
@@ -40,15 +41,14 @@ class chip8{
         }
 
         bool loadProgram(std::string filePath){
-            //TODO: implement
-            // load file
-            // check that it loaded correctly
-            // loop through it byte by byte placing it starting at 200
-
-
             std::ifstream program(filePath, std::ios::binary);
             if (!program) {
                 std::cerr << "Failed to open file: " << filePath << std::endl;
+                return false;
+            }
+
+            if (fileSize == 0) {
+                std::cerr << "Empty file" << std::endl;
                 return false;
             }
 
@@ -58,19 +58,20 @@ class chip8{
             std::size_t fileSize = program.tellg();
             program.seekg(0, std::ios::beg);
 
-            if (fileSize > 0x1000 - 0x200){
+            if (fileSize >= 0x1000 - 0x200){
                 std::cerr << "File too big to load into memory" << std::endl;
                 return false;
             }
 
             std::uint8_t byte;
 
-            for(int i = 0; i < fileSize ; i++){
-                program.read(reinterpret_cast<char*>(&byte), sizeof(byte));
+            for(int i = 0; i < fileSize; i++) {
+                if (!program.read(reinterpret_cast<char*>(&byte), sizeof(byte))) {
+                    std::cerr << "File read error at byte " << i << std::endl;
+                    return false;
+                }
                 memory[i + 0x200] = byte;
             }
-
-            // Close the file
             program.close();
             return true;
         }
@@ -96,15 +97,15 @@ class chip8{
         };
 
         bool enactInstruction(std::uint16_t instruction){
-            if (instruction == 0x0E00) { // 0E00/CLS: Clear the display
-                memset(display, 0, sizeof(display[0][0]) * 64 * 32)
+            if (instruction == 0x00E0) { // 00E0/CLS: Clear the display
+                memset(display, 0, sizeof(display));
             } else if (instruction == 0x00EE) { // 00EE/RET: Returns subroutine (pops subroutine stack)
-                stack.pop();
+                programCounter = stack.pop();
             } else if ((instruction & 0xF000) == 0x1000) { // 1NNN/JP addr: Jump to address
-                instruction = instruction & 0x0FFF; // cutting off the leading 1 and assigning it to the PC
+                programCounter = (instruction & 0x0FFF)- 0x2; // cutting off the leading 1 and assigning it to the PC
             } else if ((instruction & 0xF000) == 0x2000) { // 2NNN/CALL addr: Jump to address
                 stack.push(programCounter);
-                programCounter = instruction & 0x0FFF - 0x2; // cutting off the leading 2 and assigning it to the PC
+                programCounter = (instruction & 0x0FFF) - 0x2; // cutting off the leading 2 and assigning it to the PC
 
             } else if ((instruction & 0xF000) == 0x3000) { // 3xkk/SE Vx, byte: Skip next instruction if kk equal Vx
                 //DEBUG: this might be a problem a) it might not check intended and a more important b)might need to increment the pc twice
@@ -124,9 +125,8 @@ class chip8{
             } else if ((instruction & 0xF000) == 0x6000) { // 6xkk/LD Vx, byte: Put kk into register Vx
                 dataRegister[(instruction & 0x0F00) >> 8] = instruction & 0x00FF;    
             } else if ((instruction & 0xF000) == 0x7000) { // 7xkk/ADD Vx, byte: ADD kk into register Vx (NOTE: THERE IS NO CARRY FLAG SETTING)
-                std::uint16_t sum = dataRegister[(instruction & 0x0F00) >> 8] + instruction & 0x00FF;
+                std::uint16_t sum = dataRegister[(instruction & 0x0F00) >> 8] + (instruction & 0x00FF);
                 dataRegister[(instruction & 0x0F00) >> 8] = sum;
-                
             } 
 
             // 8 Vx Vy operations VVVV
@@ -155,18 +155,22 @@ class chip8{
                 //PROPOSED AI BITWISE VF set: dataRegister[0xF] = ((~diff) >> 8) & 1;
             }
             else if (((instruction & 0xF000) == 0x8000) && ((instruction & 0x000F) == 0x0006)) {  //8xy6/SHR Vx, Vy: set vX to vY and shift vX one bit to the right, set vF to the bit shifted out
-                dataRegister[(instruction & 0x0F00) >> 8] = dataRegister[(instruction & 0x00F0) >> 4] >> 1;
-                dataRegister[0xF] = dataRegister[(instruction & 0x00F0) >> 4] & 0x1;
+                uint8_t vx = (instruction & 0x0F00) >> 8;
+                uint8_t vy = (instruction & 0x00F0) >> 4;
+                dataRegister[0xF] = dataRegister[vy] & 0x01;
+                dataRegister[vx] = dataRegister[vy] >> 1;
             }
             else if (((instruction & 0xF000) == 0x8000) && ((instruction & 0x000F) == 0x0007)) {  //8xy7/SUBN Vx, Vy: SetVx=Vx-Vy,set VF= !borrow.
                 std::uint16_t difference = dataRegister[(instruction & 0x00F0) >> 4] - dataRegister[(instruction & 0x0F00) >> 8];
                 dataRegister[0xF] = dataRegister[(instruction & 0x0F00) >> 8] > dataRegister[(instruction & 0x00F0) >> 4] ? 0 : 1;
                 dataRegister[(instruction & 0x0F00) >> 8] = difference;  
-                //PROPOSED AI BITWISE VF set: dataRegister[0xF] = ((~diff) >> 8) & 1;
+                //PROPOSED BITWISE VF set: dataRegister[0xF] = ((~diff) >> 8) & 1;
             }
             else if (((instruction & 0xF000) == 0x8000) && ((instruction & 0x000F) == 0x000E)) { //8xyE/SHL Vx, Vy: set vX to vY and shift vX one bit to the left, set vF to the bit shifted out
-                dataRegister[(instruction & 0x0F00) >> 8] = dataRegister[(instruction & 0x00F0) >> 4] << 1;
-                dataRegister[0xF] = dataRegister[(instruction & 0x00F0) >> 4] >> 7;
+                uint8_t vx = (instruction & 0x0F00) >> 8;
+                uint8_t vy = (instruction & 0x00F0) >> 4;
+                dataRegister[0xF] = (dataRegister[vy] >> 7) & 0x01;
+                dataRegister[vx] = dataRegister[vy] << 1;
             } 
             
             // 8 Vx Vy operations ^^^^
@@ -185,20 +189,24 @@ class chip8{
             else if ((instruction & 0xF000) == 0xC000) { //Cxkk/RND Vx, byte: Random number 0 to 255 anded with kk and assigned to Vx
                 dataRegister[(instruction & 0x0F00) >> 8] = (instruction & 0x00FF) & chip8Rand();
             }
-            else if ((instruction & 0xF000) == 0xD000) { //Dxyn/DRW Vx, Vy, nibble: //TODO: Review this
-                xStart = instruction & 0x0F00 >> 8;
-                yStart = instruction & 0x00F0 >> 4;
-
+            else if ((instruction & 0xF000) == 0xD000) {
+                uint8_t x = dataRegister[(instruction & 0x0F00) >> 8] % 64;  // Get from register + wrap
+                uint8_t y = dataRegister[(instruction & 0x00F0) >> 4] % 32;  // Get from register + wrap
+                uint8_t height = instruction & 0x000F;
                 dataRegister[0xF] = 0;
-                for (std::uint8_t i = 0; i < (instruction & 0x000F); i++ ){
-                    std::uint8_t sprite = memory[addressRegister+i];
-                    for (std::uint8_t j = 0; j < 8; j++){
-                        yCoor = yStart+i % 32;
-                        xCoor = xStart+j % 64;
-                        if ((display[yCoor][xCoor] == 1) & ((sprite >> bitIndex) & 1)){
-                            dataRegister[0xF] = 1;
+
+                for (uint8_t row = 0; row < height; row++) {
+                    uint8_t sprite = memory[addressRegister + row];
+                    uint8_t yPos = (y + row) % 32;  // Wrap Y coordinate
+
+                    for (int col = 0; col < 8; col++) {
+                        uint8_t xPos = (x + col) % 64;  // Wrap X coordinate
+                        uint8_t bit = (sprite >> (7 - col)) & 1;  // Extract MSB-first
+
+                        if (bit && display[yPos][xPos]) {
+                            dataRegister[0xF] = 1;  // Collision detected
                         }
-                        display[yCoor][xCoor] = display[yCoor][xCoor] ^ ((sprite >> bitIndex) & 1);
+                        display[yPos][xPos] ^= bit;  // XOR pixel
                     }
                 }
             }
@@ -218,8 +226,8 @@ class chip8{
                 dataRegister[(instruction & 0x0F00) >> 8] = delayTimer;
             }
             else if ((instruction & 0xF0FF) == 0xF00A) { //Fx0A - LD Vx, K: Wait for a key press, store the value of the key in Vx. 
-                std::bool decrementPC = true;      
-                for (std::uint16_t i; i > 17; i++){
+                bool decrementPC = true;      
+                for (std::uint8_t i; i < 16; i++){
                     if (keypad[i] == true){
                         dataRegister[(instruction & 0x0F00) >> 8] = i;
                         decrementPC = false;
@@ -227,7 +235,7 @@ class chip8{
                     }
                 }
                 if (decrementPC) {
-                    programCounter--;
+                    programCounter = programCounter - 0x2;
                 }
             }
             else if ((instruction & 0xF0FF) == 0xF015){ //Fx15 - LD DT, Vx: Set delay timer = Vx.
@@ -249,16 +257,16 @@ class chip8{
                 memory[addressRegister + 2] = value % 10; 
             }
             else if ((instruction & 0xF0FF) == 0xF055) { //Fx55 - LD [I], Vx: Stores V0 to VX in memory starting at address I. 
-                for (std::uint8_t i = 0; i <= (instruction & 0x0F00) >> 8); i++){
+                for (std::uint8_t i = 0; i <= ((instruction & 0x0F00) >> 8); i++){
                     memory[addressRegister + i] = dataRegister[i];
                 }
-                addressRegister = addressRegister + 1 + ((instruction & 0x0F00) >> 8);
+                //addressRegister = addressRegister + 1 + ((instruction & 0x0F00) >> 8); only used in chip8 1.0 not in 1.1
             }
             else if ((instruction & 0xF0FF) == 0xF065) { //Fx65 - LD [I], Vx: Stores memory starting at address I into V0 to VX. 
-                for (std::uint8_t i = 0; i <= (instruction & 0x0F00) >> 8); i++){
+                for (std::uint8_t i = 0; i <= ((instruction & 0x0F00) >> 8); i++){
                     dataRegister[i] = memory[addressRegister + i];
                 }
-                addressRegister = addressRegister + 1 + ((instruction & 0x0F00) >> 8);
+                // addressRegister = addressRegister + 1 + ((instruction & 0x0F00) >> 8); only use in original chip 8 spec. modern doesnt do this
             }
             else {
                 std::cerr << "opcode not specified in original implementation reached" << std::endl;
