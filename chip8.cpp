@@ -97,6 +97,7 @@ class chip8{
                 std::uint8_t ticksToSubtract = ticksPassed(lastCheckInPtr, accumulatorSeconds);
                 delayTimer = (delayTimer > ticksToSubtract) ? delayTimer - ticksToSubtract : 0;
                 soundTimer = (soundTimer > ticksToSubtract) ? soundTimer - ticksToSubtract : 0;
+                //TODO: insert audio check for sound timer
             }
         };
 
