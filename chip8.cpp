@@ -2,7 +2,7 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
-
+#include <chrono>
 #include "8BitStack.cpp"
 
 
@@ -15,6 +15,10 @@ class chip8{
         bool keypad[16];//TODO: this is not for production this is only a placeholder for the sdl keypad implementation delete later
 
         std::uint32_t prngState = 0;
+
+        std::chrono::time_point<std::chrono::high_resolution_clock>* lastCheckInPtr;
+
+        double& accumulatorSeconds;
 
         //EMULATED
         bool display[32][64] = {};
@@ -42,17 +46,11 @@ class chip8{
 
         bool loadProgram(std::string filePath){
             std::ifstream program(filePath, std::ios::binary);
+
             if (!program) {
                 std::cerr << "Failed to open file: " << filePath << std::endl;
                 return false;
             }
-
-            if (fileSize == 0) {
-                std::cerr << "Empty file" << std::endl;
-                return false;
-            }
-
-            //determine file length
 
             program.seekg(0, std::ios::end);
             std::size_t fileSize = program.tellg();
@@ -60,6 +58,11 @@ class chip8{
 
             if (fileSize >= 0x1000 - 0x200){
                 std::cerr << "File too big to load into memory" << std::endl;
+                return false;
+            }
+
+            if (fileSize == 0) {
+                std::cerr << "Empty file" << std::endl;
                 return false;
             }
 
@@ -77,20 +80,44 @@ class chip8{
         }
 
         bool initialize(){
-            programCounter = 0x200;
-            prngState = 1; //TODO: set using epoch for first seed before deployment
-            return true;
-            //Start to emulation loop
 
+            //TODO:insert fonts
+            accumulatorSeconds = 0;
+            *lastCheckInPtr = std::chrono::high_resolution_clock::now();
+            programCounter = 0x200;
+            uint64_t now = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+            uint32_t prngState = static_cast<uint32_t>(now ^ (now >> 32));
+            return true;
         };
 
         void emulationLoop(){
-            //TODO IMPLEMENT THE FOLLOWING FUNCTIONS INTO THIS FUNCTION
-            //call function to do instruction and advance pc
-            //update timers
-
-            int i = 0;
+            while(true){
+                enactInstruction(fetchInstruction());
+                programCounter = programCounter + 0x2;
+                std::uint8_t ticksToSubtract = ticksPassed(lastCheckInPtr, accumulatorSeconds);
+                delayTimer = (delayTimer > ticksToSubtract) ? delayTimer - ticksToSubtract : 0;
+                soundTimer = (soundTimer > ticksToSubtract) ? soundTimer - ticksToSubtract : 0;
+            }
         };
+
+        std::uint16_t ticksPassed(std::chrono::time_point<std::chrono::high_resolution_clock>* lastCheckInPtr, double& accumulatorSeconds){
+            auto now = std::chrono::high_resolution_clock::now();
+
+            double elapsedSeconds = std::chrono::duration<double>(now - *lastCheckInPtr).count();
+            accumulatorSeconds += elapsedSeconds;
+
+            std::uint8_t ticks = 0;
+            constexpr double tickDuration = 1.0 / 60.0;
+            while (accumulatorSeconds >= tickDuration) {
+                accumulatorSeconds -= tickDuration;
+                ticks++;
+            }
+
+            *lastCheckInPtr = now;
+
+            return ticks;
+        };
+
 
         std::uint16_t fetchInstruction(){
             return (memory[programCounter]<<8 |  memory[programCounter+1]);
